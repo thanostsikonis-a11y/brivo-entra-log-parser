@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Brivo · Entra Provisioning Log Parser</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --border: #2e3250;
+    --text: #e2e4f0;
+    --text-muted: #7a7f9a;
+    --green: #22c55e;
+    --red: #f43f5e;
+    --yellow: #f59e0b;
+    --blue: #3b82f6;
+    --purple: #a855f7;
+    --brivo: #0066cc;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 14px;
+    min-height: 100vh;
+  }
+
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  header .logo {
+    background: var(--brivo);
+    color: #fff;
+    font-weight: 700;
+    font-size: 13px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+  }
+  header h1 { font-size: 16px; font-weight: 600; }
+  header .subtitle { font-size: 12px; color: var(--text-muted); margin-left: auto; }
+
+  .main { max-width: 1100px; margin: 0 auto; padding: 24px; }
+
+  /* Drop zone */
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    padding: 40px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    background: var(--surface);
+    position: relative;
+  }
+  .drop-zone.drag-over { border-color: var(--brivo); background: #0066cc12; }
+  .drop-zone input[type=file] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+  }
+  .drop-icon { font-size: 36px; margin-bottom: 12px; }
+  .drop-label { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+  .drop-sub { color: var(--text-muted); font-size: 13px; }
+  .format-badges { display: flex; gap: 8px; justify-content: center; margin-top: 12px; }
+  .badge {
+    font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .badge-json { background: #1e3a5f; color: var(--blue); border: 1px solid #2a5080; }
+  .badge-csv  { background: #1a3a25; color: var(--green); border: 1px solid #2a5035; }
+
+  /* Paste area */
+  .paste-section { margin-top: 16px; }
+  .paste-section label { display: block; color: var(--text-muted); font-size: 12px; margin-bottom: 6px; }
+  textarea {
+    width: 100%; background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); font-family: "SF Mono", "Fira Code", monospace;
+    font-size: 12px; padding: 12px; resize: vertical; min-height: 100px;
+    transition: border-color 0.2s;
+  }
+  textarea:focus { outline: none; border-color: var(--brivo); }
+  .paste-actions { display: flex; gap: 8px; margin-top: 8px; }
+
+  button {
+    padding: 8px 18px; border: none; border-radius: 6px; cursor: pointer;
+    font-size: 13px; font-weight: 600; transition: opacity 0.15s;
+  }
+  button:hover { opacity: 0.85; }
+  .btn-primary { background: var(--brivo); color: #fff; }
+  .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+
+  /* Summary bar */
+  .summary-bar {
+    display: flex; gap: 12px; margin-top: 24px; flex-wrap: wrap;
+  }
+  .stat-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 20px; flex: 1; min-width: 120px; text-align: center;
+  }
+  .stat-card .num { font-size: 28px; font-weight: 700; }
+  .stat-card .lbl { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .stat-total .num { color: var(--text); }
+  .stat-fail .num   { color: var(--red); }
+  .stat-skip .num   { color: var(--yellow); }
+  .stat-ok .num     { color: var(--green); }
+
+  /* Section headers */
+  .section-header {
+    display: flex; align-items: center; gap: 10px;
+    margin: 24px 0 12px; font-size: 14px; font-weight: 700;
+  }
+  .section-header .dot {
+    width: 10px; height: 10px; border-radius: 50%;
+  }
+  .dot-fail { background: var(--red); }
+  .dot-skip { background: var(--yellow); }
+  .dot-ok   { background: var(--green); }
+
+  /* Log cards */
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; margin-bottom: 10px; overflow: hidden;
+  }
+  .card-header {
+    display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px;
+    cursor: pointer; user-select: none;
+  }
+  .card-header:hover { background: var(--surface2); }
+  .status-pill {
+    font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 20px;
+    text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; flex-shrink: 0;
+  }
+  .pill-fail { background: #3d0a14; color: var(--red); border: 1px solid #6b1a28; }
+  .pill-skip { background: #3d2a00; color: var(--yellow); border: 1px solid #6b4800; }
+  .pill-ok   { background: #0a2d18; color: var(--green); border: 1px solid #1a5530; }
+  .card-meta { flex: 1; min-width: 0; }
+  .card-title { font-weight: 600; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card-sub { font-size: 12px; color: var(--text-muted); }
+  .card-chevron { color: var(--text-muted); transition: transform 0.2s; flex-shrink: 0; margin-top: 2px; }
+  .card.open .card-chevron { transform: rotate(90deg); }
+
+  .card-body { display: none; padding: 0 16px 16px; border-top: 1px solid var(--border); }
+  .card.open .card-body { display: block; }
+
+  /* Fix box */
+  .fix-box {
+    background: #0a1f35; border: 1px solid #1e4070; border-radius: 8px;
+    padding: 12px 14px; margin-top: 12px;
+  }
+  .fix-box .fix-title {
+    font-size: 12px; font-weight: 700; color: var(--blue); text-transform: uppercase;
+    letter-spacing: 0.5px; margin-bottom: 8px;
+  }
+  .fix-box ul { padding-left: 18px; color: var(--text); line-height: 1.7; font-size: 13px; }
+
+  /* Detail table */
+  .detail-table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 12px; }
+  .detail-table td { padding: 5px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .detail-table td:first-child { color: var(--text-muted); white-space: nowrap; width: 160px; }
+  .detail-table tr:last-child td { border-bottom: none; }
+
+  /* Raw JSON toggle */
+  .raw-toggle { margin-top: 10px; }
+  .raw-toggle summary { cursor: pointer; color: var(--text-muted); font-size: 12px; }
+  .raw-toggle pre {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 10px; margin-top: 8px; font-size: 11px; overflow-x: auto;
+    max-height: 200px; overflow-y: auto; color: #a0c4ff; white-space: pre-wrap; word-break: break-all;
+  }
+
+  /* Collapsed success list */
+  .ok-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .ok-chip {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 6px;
+    padding: 4px 10px; font-size: 12px; color: var(--text-muted);
+  }
+
+  .empty-state { color: var(--text-muted); text-align: center; padding: 40px; font-size: 13px; }
+
+  /* Format indicator */
+  .format-indicator {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--text-muted); margin-top: 8px;
+  }
+  .format-indicator .fmt { font-weight: 700; color: var(--text); }
+
+  @media (max-width: 600px) {
+    .main { padding: 12px; }
+    .summary-bar { flex-wrap: wrap; }
+    .stat-card { min-width: 100px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="logo">BRIVO</span>
+  <h1>Entra Provisioning Log Parser</h1>
+  <span class="subtitle">Supports Azure Portal CSV &amp; Graph API JSON</span>
+</header>
+
+<div class="main">
+
+  <!-- Drop zone -->
+  <div class="drop-zone" id="dropZone">
+    <input type="file" id="fileInput" accept=".json,.csv,.txt">
+    <div class="drop-icon">📋</div>
+    <div class="drop-label">Drop your provisioning log file here</div>
+    <div class="drop-sub">or click to browse</div>
+    <div class="format-badges" style="margin-top:12px">
+      <span class="badge badge-csv">CSV — Azure Portal export</span>
+      <span class="badge badge-json">JSON — Graph API / audit log</span>
+    </div>
+  </div>
+
+  <!-- Paste area -->
+  <div class="paste-section">
+    <label>Or paste log content directly (CSV or JSON)</label>
+    <textarea id="pasteArea" placeholder='Paste CSV rows or JSON array here...&#10;&#10;CSV example:&#10;Date,Status,Action,Source Object Name,Target Object Name,Error Code,Error Reason&#10;2024-01-15T10:30:00Z,Failure,Create,john.doe@acme.com,,SchemaViolation,firstName is required&#10;&#10;JSON example:&#10;[{"id":"...","status":"failure","action":"Create",...}]'></textarea>
+    <div class="paste-actions">
+      <button class="btn-primary" onclick="parsePasted()">Parse</button>
+      <button class="btn-secondary" onclick="clearAll()">Clear</button>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div id="results"></div>
+</div>
+
+<script>
+// ─── Fix suggestions database ────────────────────────────────────────────────
+const FIX_MAP = [
+  {
+    match: /400|not valid|not formatted properly/i,
+    title: "400 — Invalid Attribute Mapping",
+    steps: [
+      "Go to Entra ID → Enterprise Apps → Brivo → Provisioning → Attribute Mappings",
+      "Check all required fields are mapped: <code>userName</code>, <code>name.givenName</code>, <code>name.familyName</code>",
+      "Remove any custom mappings pointing to non-existent Brivo SCIM fields",
+      "Save and re-trigger provisioning"
+    ]
+  },
+  {
+    match: /401|unauthorized|token|credentials/i,
+    title: "401 — SCIM Token Expired or Invalid",
+    steps: [
+      "In Brivo Access: Settings → Integrations → SCIM → Regenerate Token",
+      "In Entra ID: Enterprise App → Provisioning → Admin Credentials → paste new token",
+      "Re-test the connection (Test Connection button)",
+      "Restart the provisioning cycle"
+    ]
+  },
+  {
+    match: /SchemaViolation|schema violation|required field/i,
+    title: "Schema Violation — Required Field Missing",
+    steps: [
+      "Brivo SCIM requires: <code>userName</code>, <code>name.givenName</code>, <code>name.familyName</code>",
+      "Check the source attribute in Entra is populated (not null/empty) for failing users",
+      "In Attribute Mappings, ensure these source attributes are mapped and not optional",
+      "For the affected users, manually populate missing fields in Entra/AD"
+    ]
+  },
+  {
+    match: /SystemForCrossDomainIdentityManagementServiceIncompatible|SCIM.*incompatible|wrong.*url|endpoint.*url/i,
+    title: "SCIM Endpoint URL Mismatch",
+    steps: [
+      "Correct Brivo Identity Connector URL (Global): <code>https://identity-connector-service.prod.brivo.com/api/ActiveDirectory/v2/</code>",
+      "EU tenants use: <code>https://identity-connector-service.eu.brivo.com/api/ActiveDirectory/v2/</code>",
+      "In Entra: Enterprise App → Provisioning → Admin Credentials → Tenant URL → update and save",
+      "Re-test the connection after changing the URL"
+    ]
+  },
+  {
+    match: /EntryConflict|duplicate|already exists|conflict/i,
+    title: "Entry Conflict — Duplicate User",
+    steps: [
+      "A user with the same <code>userName</code> (email) already exists in Brivo",
+      "Option A: Delete the duplicate in Brivo Access → Users, then re-provision",
+      "Option B: Use the matching ID in Entra to link rather than create",
+      "Check if the user was manually created before SCIM was configured"
+    ]
+  },
+  {
+    match: /403|forbidden|inactive|not active/i,
+    title: "403 — App Inactive or Insufficient Permissions",
+    steps: [
+      "Verify the Brivo application is active: Brivo Access → Settings → Integrations",
+      "Confirm the API key used for SCIM has admin-level provisioning permissions",
+      "Check the Brivo account subscription includes SCIM/SSO features",
+      "Contact Brivo support to verify account entitlements"
+    ]
+  },
+  {
+    match: /scope|filter|not in scope|scoping/i,
+    title: "Scoping Filter — User Excluded",
+    steps: [
+      "User matches the scoping filter exclusion rule — this may be intentional",
+      "In Entra: Provisioning → Settings → Scope — check if set to 'Sync only assigned users'",
+      "If user should sync: assign them to the Enterprise App in Entra",
+      "To include all users: change Scope to 'Sync all users and groups'"
+    ]
+  },
+  {
+    match: /MultipleEntriesInResponse|multiple entries.*found|more than one.*expected/i,
+    title: "Duplicate externalId — Multiple Users Matched",
+    steps: [
+      "Brivo found more than one user with the same <code>externalId</code> — this breaks the SCIM lookup",
+      "This usually means users were manually created in Brivo before SCIM was configured, resulting in duplicate records",
+      "In Brivo Access → Users, search for the affected username (shown in Source Identity Name)",
+      "Identify and delete the duplicate user(s), keeping only the one that should be managed by SCIM",
+      "After cleanup, trigger 'Provision on demand' in Entra for the affected user to verify resolution",
+      "If duplicates keep appearing, check if another integration (e.g. CSV import, manual creation) is creating users outside SCIM"
+    ]
+  },
+  {
+    match: /timeout|timed out|connection.*refused|network/i,
+    title: "Network / Timeout Error",
+    steps: [
+      "Brivo API may be temporarily unavailable — check status.brivo.com",
+      "Retry provisioning after a few minutes",
+      "If persistent: verify no firewall blocking outbound to api.brivo.com:443",
+      "Escalate to Brivo support with the exact timestamp of the failure"
+    ]
+  }
+];
+
+function getFix(errorCode, errorReason, combinedText) {
+  const haystack = [errorCode, errorReason, combinedText].join(' ').toLowerCase();
+  for (const fix of FIX_MAP) {
+    if (fix.match.test(haystack)) return fix;
+  }
+  return null;
+}
+
+// ─── CSV Parser ──────────────────────────────────────────────────────────────
+function parseCSV(text) {
+  const lines = text.trim().split(/\r?\n/);
+  if (lines.length < 2) throw new Error("CSV must have a header row and at least one data row");
+
+  // Parse header — handle quoted fields
+  const headers = splitCSVLine(lines[0]).map(h => h.trim().toLowerCase().replace(/\s+/g, '_'));
+
+  const records = [];
+  for (let i = 1; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    const cols = splitCSVLine(lines[i]);
+    const row = {};
+    headers.forEach((h, idx) => { row[h] = (cols[idx] || '').trim(); });
+    records.push(row);
+  }
+
+  // Normalize to internal format
+  return records.map(r => normalizeCSVRow(r));
+}
+
+function splitCSVLine(line) {
+  const result = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i+1] === '"') { cur += '"'; i++; }
+      else { inQuotes = !inQuotes; }
+    } else if (ch === ',' && !inQuotes) {
+      result.push(cur); cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  result.push(cur);
+  return result;
+}
+
+// Map CSV column names to a normalized internal record
+// Handles both simplified portal exports AND the full Graph API CSV format
+// (Graph API uses PascalCase compound names: StatusInfoStatus, SourceIdentityName, etc.)
+function normalizeCSVRow(r) {
+  // Status — simple export: "Status" / Graph API export: "StatusInfoStatus"
+  const status = (
+    r['statusinfostatus'] ||       // Graph API CSV (e.g. "failure")
+    r['status'] ||
+    r['result'] ||
+    r['provisioningstatus'] ||
+    ''
+  ).toLowerCase();
+
+  // Action — same in both formats
+  const action = r['action'] || r['activitytype'] || r['provisioningaction'] || '';
+
+  // Source user — simple: "Source Object Name" / Graph API: "SourceIdentityName"
+  const sourceObj =
+    r['sourceidentityname'] ||     // Graph API CSV
+    r['source_object_name'] ||
+    r['sourceobjectname'] ||
+    r['source_user'] ||
+    r['user_principal_name'] ||
+    r['userprincipalname'] ||
+    '';
+
+  // Target user — simple: "Target Object Name" / Graph API: "TargetIdentityName"
+  const targetObj =
+    r['targetidentityname'] ||     // Graph API CSV
+    r['target_object_name'] ||
+    r['targetobjectname'] ||
+    r['target_user'] ||
+    '';
+
+  // Error code — simple: "Error Code" / Graph API: "StatusInfoErrorCode"
+  const errorCode =
+    r['statusinfoerrorcode'] ||    // Graph API CSV
+    r['error_code'] ||
+    r['errorcode'] ||
+    r['error'] ||
+    '';
+
+  // Error reason — simple: "Error Reason" / Graph API: "StatusInfoReason"
+  const errorReason =
+    r['statusinforeason'] ||       // Graph API CSV (long description string)
+    r['statusinfoadditionaldetails'] ||
+    r['error_reason'] ||
+    r['errorreason'] ||
+    r['errordetail'] ||
+    r['error_detail'] ||
+    r['statusdetails'] ||
+    '';
+
+  // Date — simple: "Date" / Graph API: "DateTime"
+  const date =
+    r['datetime'] ||               // Graph API CSV
+    r['date'] ||
+    r['timestamp'] ||
+    r['time'] ||
+    r['createddatetime'] ||
+    '';
+
+  const modifiedProps = r['modified_properties'] || r['modifiedproperties'] || '';
+
+  let statusNorm = 'unknown';
+  if (/fail|error/i.test(status)) statusNorm = 'failure';
+  else if (/skip|filter/i.test(status)) statusNorm = 'skipped';
+  else if (/success|ok|complete/i.test(status)) statusNorm = 'success';
+
+  return {
+    _source: 'csv',
+    _raw: r,
+    id: date + '_' + (sourceObj || Math.random()),
+    status: statusNorm,
+    action: action,
+    date: date,
+    sourceObjectName: sourceObj,
+    targetObjectName: targetObj,
+    errorCode: errorCode,
+    errorReason: errorReason,
+    modifiedProperties: modifiedProps,
+  };
+}
+
+// ─── JSON Parser ─────────────────────────────────────────────────────────────
+function parseJSON(text) {
+  let data = JSON.parse(text);
+  if (data.value) data = data.value; // Graph API wraps in {value: [...]}
+  if (!Array.isArray(data)) data = [data];
+
+  return data.map(entry => normalizeJSONEntry(entry));
+}
+
+function normalizeJSONEntry(e) {
+  const status = (e.status || e.provisioningStatus || e.provisioningResult || '').toLowerCase();
+
+  let statusNorm = 'unknown';
+  if (/fail|error/i.test(status)) statusNorm = 'failure';
+  else if (/skip|filter/i.test(status)) statusNorm = 'skipped';
+  else if (/success|ok|complete/i.test(status)) statusNorm = 'success';
+
+  // Error info — varies by Entra export format
+  const errCode = e.errorCode
+    || e.status?.errorCode
+    || e.statusInfo?.errorCode
+    || e.provisioningStatusInfo?.errorCode
+    || '';
+  const errReason = e.reason
+    || e.errorReason
+    || e.status?.reason
+    || e.statusInfo?.reason
+    || e.provisioningStatusInfo?.reason
+    || e.message
+    || '';
+
+  const srcObj = e.sourceIdentity?.displayName
+    || e.sourceObjectName
+    || e.sourceIdentity?.id
+    || e.sourceObjectId
+    || '';
+  const tgtObj = e.targetIdentity?.displayName
+    || e.targetObjectName
+    || e.targetIdentity?.id
+    || e.targetObjectId
+    || '';
+
+  return {
+    _source: 'json',
+    _raw: e,
+    id: e.id || e.activityDisplayName || Math.random().toString(36),
+    status: statusNorm,
+    action: e.action || e.provisioningAction || e.activityDisplayName || '',
+    date: e.activityDateTime || e.createdDateTime || e.modifiedDateTime || '',
+    sourceObjectName: srcObj,
+    targetObjectName: tgtObj,
+    errorCode: errCode,
+    errorReason: errReason,
+    modifiedProperties: e.modifiedProperties ? JSON.stringify(e.modifiedProperties) : '',
+  };
+}
+
+// ─── Auto-detect format ──────────────────────────────────────────────────────
+function detectAndParse(text) {
+  const trimmed = text.trim();
+  if (!trimmed) throw new Error("No content to parse");
+
+  // JSON detection
+  if (trimmed[0] === '[' || trimmed[0] === '{') {
+    return { records: parseJSON(trimmed), format: 'JSON' };
+  }
+
+  // CSV detection — first line should be comma-separated with recognizable headers
+  const firstLine = trimmed.split(/\r?\n/)[0].toLowerCase();
+  if (firstLine.includes(',') && (
+    firstLine.includes('status') ||
+    firstLine.includes('date') ||
+    firstLine.includes('error') ||
+    firstLine.includes('user') ||
+    firstLine.includes('action')
+  )) {
+    return { records: parseCSV(trimmed), format: 'CSV' };
+  }
+
+  throw new Error("Could not detect format. Expected JSON array or CSV with header row.");
+}
+
+// ─── Render results ──────────────────────────────────────────────────────────
+function render(records, format) {
+  const failures = records.filter(r => r.status === 'failure');
+  const skipped  = records.filter(r => r.status === 'skipped');
+  const success  = records.filter(r => r.status === 'success');
+  const other    = records.filter(r => r.status === 'unknown');
+
+  let html = '';
+
+  // Format indicator
+  html += `<div class="format-indicator" style="margin-top:16px;">
+    Parsed <span class="fmt">${records.length} records</span> from
+    <span class="badge ${format === 'CSV' ? 'badge-csv' : 'badge-json'}">${format}</span>
+  </div>`;
+
+  // Summary bar
+  html += `<div class="summary-bar">
+    <div class="stat-card stat-total"><div class="num">${records.length}</div><div class="lbl">Total Events</div></div>
+    <div class="stat-card stat-fail"><div class="num">${failures.length}</div><div class="lbl">Failures</div></div>
+    <div class="stat-card stat-skip"><div class="num">${skipped.length}</div><div class="lbl">Skipped</div></div>
+    <div class="stat-card stat-ok"><div class="num">${success.length}</div><div class="lbl">Success</div></div>
+  </div>`;
+
+  // Failures
+  if (failures.length > 0) {
+    html += `<div class="section-header"><span class="dot dot-fail"></span>Failures (${failures.length})</div>`;
+    failures.forEach((r, i) => { html += renderCard(r, 'fail', i); });
+  }
+
+  // Skipped
+  if (skipped.length > 0) {
+    html += `<div class="section-header"><span class="dot dot-skip"></span>Skipped (${skipped.length})</div>`;
+    skipped.forEach((r, i) => { html += renderCard(r, 'skip', i); });
+  }
+
+  // Success — collapsed chip list
+  if (success.length > 0) {
+    html += `<div class="section-header"><span class="dot dot-ok"></span>Success (${success.length})</div>`;
+    html += '<div class="ok-list">';
+    success.forEach(r => {
+      const name = esc(r.sourceObjectName || r.action || r.id || 'Success');
+      html += `<span class="ok-chip">✓ ${name}</span>`;
+    });
+    html += '</div>';
+  }
+
+  // Unknown / unclassified
+  if (other.length > 0) {
+    html += `<div class="section-header"><span class="dot" style="background:var(--text-muted)"></span>Unclassified (${other.length})</div>`;
+    other.forEach((r, i) => { html += renderCard(r, 'skip', i); });
+  }
+
+  document.getElementById('results').innerHTML = html;
+}
+
+function renderCard(r, type, idx) {
+  const pillClass = type === 'fail' ? 'pill-fail' : type === 'skip' ? 'pill-skip' : 'pill-ok';
+  const pillLabel = type === 'fail' ? '✕ Failure' : type === 'skip' ? '⊘ Skipped' : '✓ Success';
+
+  const title = esc(r.sourceObjectName || r.targetObjectName || r.action || 'Unknown Object');
+  const sub = [r.action, r.date ? formatDate(r.date) : ''].filter(Boolean).join(' · ');
+
+  const fix = (type === 'fail') ? getFix(r.errorCode, r.errorReason, [r.errorCode, r.errorReason].join(' ')) : null;
+  const fixHTML = fix ? `
+    <div class="fix-box">
+      <div class="fix-title">🔧 ${esc(fix.title)}</div>
+      <ul>${fix.steps.map(s => `<li>${s}</li>`).join('')}</ul>
+    </div>` : '';
+
+  // Detail rows
+  const details = [
+    ['Status', type],
+    ['Action', r.action],
+    ['Date', r.date ? formatDate(r.date) : ''],
+    ['Source Object', r.sourceObjectName],
+    ['Target Object', r.targetObjectName],
+    ['Error Code', r.errorCode],
+    ['Error Reason', r.errorReason],
+    ['Modified Properties', r.modifiedProperties],
+  ].filter(([, v]) => v);
+
+  const detailRows = details.map(([k, v]) =>
+    `<tr><td>${k}</td><td>${esc(v)}</td></tr>`
+  ).join('');
+
+  const rawStr = esc(JSON.stringify(r._raw, null, 2));
+
+  return `
+  <div class="card" id="card-${type}-${idx}">
+    <div class="card-header" onclick="toggleCard('card-${type}-${idx}')">
+      <span class="status-pill ${pillClass}">${pillLabel}</span>
+      <div class="card-meta">
+        <div class="card-title">${title}</div>
+        <div class="card-sub">${esc(sub)}</div>
+      </div>
+      <span class="card-chevron">▶</span>
+    </div>
+    <div class="card-body">
+      ${r.errorCode || r.errorReason ? `<div style="margin-bottom:10px;">
+        ${r.errorCode ? `<span style="color:var(--red);font-weight:600;">${esc(r.errorCode)}</span> ` : ''}
+        <span style="color:var(--text-muted);font-size:13px;">${esc(r.errorReason)}</span>
+      </div>` : ''}
+      ${fixHTML}
+      <table class="detail-table">${detailRows}</table>
+      <details class="raw-toggle">
+        <summary>Raw entry</summary>
+        <pre>${rawStr}</pre>
+      </details>
+    </div>
+  </div>`;
+}
+
+function toggleCard(id) {
+  document.getElementById(id)?.classList.toggle('open');
+}
+
+function formatDate(d) {
+  if (!d) return '';
+  try { return new Date(d).toLocaleString(); } catch { return d; }
+}
+
+function esc(s) {
+  if (!s) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ─── Input handling ──────────────────────────────────────────────────────────
+function parsePasted() {
+  const text = document.getElementById('pasteArea').value.trim();
+  if (!text) { showError('Nothing to parse — paste CSV rows or JSON above.'); return; }
+  try {
+    const { records, format } = detectAndParse(text);
+    render(records, format);
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+function handleFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const text = e.target.result;
+    try {
+      const { records, format } = detectAndParse(text);
+      document.getElementById('pasteArea').value = text.length < 5000 ? text : '(file loaded — too large to display)';
+      render(records, format);
+    } catch (err) {
+      showError(err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+function showError(msg) {
+  document.getElementById('results').innerHTML =
+    `<div class="empty-state" style="color:var(--red);">⚠ ${esc(msg)}</div>`;
+}
+
+function clearAll() {
+  document.getElementById('pasteArea').value = '';
+  document.getElementById('results').innerHTML = '';
+  document.getElementById('fileInput').value = '';
+}
+
+// File input
+document.getElementById('fileInput').addEventListener('change', e => {
+  handleFile(e.target.files[0]);
+});
+
+// Drag & drop
+const dz = document.getElementById('dropZone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+dz.addEventListener('drop', e => {
+  e.preventDefault();
+  dz.classList.remove('drag-over');
+  handleFile(e.dataTransfer.files[0]);
+});
+
+// Paste event on textarea — auto-parse on Ctrl+V
+document.getElementById('pasteArea').addEventListener('paste', () => {
+  setTimeout(parsePasted, 50);
+});
+</script>
+</body>
+</html>
